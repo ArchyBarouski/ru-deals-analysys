@@ -317,13 +317,30 @@ function styleFinalTable(reportSheet, headerRow, totalRowIndex) {
   reportSheet.getRange(1, 2, 1, headerRow.slice(1).length).setValues([headerRow.slice(1)]);
 
   // 👇 Многострочный заголовок A1 с цветными словами
-  const fullHeader = "Итого\n(успех, в работе, провал)";
-  const headerBuilder = SpreadsheetApp.newRichTextValue().setText(fullHeader);
-  const fontSize = 10;
-  headerBuilder.setTextStyle(0, fullHeader.length, SpreadsheetApp.newTextStyle().setFontSize(fontSize).setBold(true).setForegroundColor("white").build());
-  headerBuilder.setTextStyle(fullHeader.indexOf("успех"), fullHeader.indexOf("успех") + 6, SpreadsheetApp.newTextStyle().setForegroundColor("#00B050").setBold(true).setFontSize(fontSize).build());
-  headerBuilder.setTextStyle(fullHeader.indexOf("в работе"), fullHeader.indexOf("в работе") + 9, SpreadsheetApp.newTextStyle().setForegroundColor("#FFC000").setBold(true).setFontSize(fontSize).build());
-  headerBuilder.setTextStyle(fullHeader.indexOf("провал"), fullHeader.indexOf("провал") + 6, SpreadsheetApp.newTextStyle().setForegroundColor("#FF6F91").setBold(true).setFontSize(fontSize).build());
+  const now = new Date();
+const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "dd.MM.yy HH:mm:ss");
+
+const fullHeader = `Итого\n(успех, в работе, провал)\nДата обновления: ${formattedDate}`;
+const headerBuilder = SpreadsheetApp.newRichTextValue().setText(fullHeader);
+
+// Основной стиль заголовка
+const baseStyle = SpreadsheetApp.newTextStyle().setFontSize(10).setBold(true).setForegroundColor("white").build();
+headerBuilder.setTextStyle(0, fullHeader.length, baseStyle);
+
+// Цветные участки
+headerBuilder.setTextStyle(fullHeader.indexOf("успех"), fullHeader.indexOf("успех") + 6,
+  SpreadsheetApp.newTextStyle().setForegroundColor("#00B050").setBold(true).setFontSize(10).build());
+
+headerBuilder.setTextStyle(fullHeader.indexOf("в работе"), fullHeader.indexOf("в работе") + 9,
+  SpreadsheetApp.newTextStyle().setForegroundColor("#FFC000").setBold(true).setFontSize(10).build());
+
+headerBuilder.setTextStyle(fullHeader.indexOf("провал"), fullHeader.indexOf("провал") + 6,
+  SpreadsheetApp.newTextStyle().setForegroundColor("#FF6F91").setBold(true).setFontSize(10).build());
+
+// Доп. строка с датой — сделаем белой и чуть менее жирной
+headerBuilder.setTextStyle(fullHeader.indexOf("Дата обновления:"), fullHeader.length,
+  SpreadsheetApp.newTextStyle().setFontSize(9).setForegroundColor("#FFFFFF").build());
+
 
   reportSheet.getRange("A1:A2")
     .merge()
