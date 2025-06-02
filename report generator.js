@@ -72,8 +72,30 @@ function prepareDealsReport() {
     const utmMedium = String(row[sourceCols[2]] || '').trim();
     const utmCampaign = String(row[sourceCols[3]] || '').trim();
 
-    const sourceKey = [normalizedSource, utmSource, utmMedium, utmCampaign].join("|");
-    const group = groupMap[sourceKey] || "Прочие";
+function normalizeKeyParts(...parts) {
+  return parts.map(v => (v || "").toString().trim());
+}
+
+const [s1, s2, s3, s4] = normalizeKeyParts(normalizedSource, utmSource, utmMedium, utmCampaign);
+
+const sourceKey = `${s1}|${s2}|${s3}|${s4}`;
+const partialKey = `${s1}|${s2}||`;
+const fallbackKey = `${s1}|||`;
+
+// Логирование Reffection и всех совпадений
+if (s1.toLowerCase().includes("reffection")) {
+  Logger.log("🔍 Проверка Reffection:");
+  Logger.log("  sourceKey:    " + sourceKey);
+  Logger.log("  partialKey:   " + partialKey);
+  Logger.log("  fallbackKey:  " + fallbackKey);
+}
+
+const group =
+  groupMap[sourceKey] ||
+  groupMap[partialKey] ||
+  groupMap[fallbackKey] ||
+  "Прочие";
+
 
     if (!resultMap.has(group)) resultMap.set(group, new Map());
     const groupData = resultMap.get(group);
@@ -98,8 +120,17 @@ let rawOutput = [];
 const totalsByMonth = sortedMonths.map(() => ({ total: 0, success: 0, open: 0, fail: 0 }));
 let grand = { total: 0, success: 0, open: 0, fail: 0 };
 
+Logger.log("=== КЛЮЧИ В resultMap ===");
+for (const key of resultMap.keys()) {
+  Logger.log("→ " + key);
+}
 for (const [group, monthMap] of resultMap.entries()) {
-  const row = [SpreadsheetApp.newRichTextValue().setText(group).setTextStyle(SpreadsheetApp.newTextStyle().setBold(true).build()).build()];
+  const row = [
+    SpreadsheetApp.newRichTextValue()
+      .setText(group)
+      .setTextStyle(SpreadsheetApp.newTextStyle().setBold(true).build())
+      .build()
+  ];
   const full = { total: 0, success: 0, open: 0, fail: 0 };
 
   sortedMonths.forEach((month, i) => {
@@ -108,7 +139,10 @@ for (const [group, monthMap] of resultMap.entries()) {
     totalsByMonth[i].success += success;
     totalsByMonth[i].open += open;
     totalsByMonth[i].fail += fail;
-    full.total += total; full.success += success; full.open += open; full.fail += fail;
+    full.total += total;
+    full.success += success;
+    full.open += open;
+    full.fail += fail;
 
     if (total === 0) {
       row.push(SpreadsheetApp.newRichTextValue().setText("").build());
@@ -141,17 +175,27 @@ for (const [group, monthMap] of resultMap.entries()) {
     row.push(SpreadsheetApp.newRichTextValue().setText("").build());
   }
 
+  // ✅ Добавляем в любом случае — даже если total = 0
   rawOutput.push({ group, richRow: row, total });
 }
 
+
 const analyticGroups = [
-  "Yandex", "Organic", "Offline", "Бывший клиент", "Maps (yandex+2gis)", "Прямой переход", "Дизайнер", "Vk.com", "Email", "Referral", "Google", "Instagram", "Facebook", "Личный контакт","Холодная база", "Марквиз", "Reffection", 
+  "Yandex", "Organic", "Offline", "Бывший клиент", "Maps (yandex+2gis)", "Прямой переход", "Дизайнер", "Vk.com", "Email", "Referral", "Google", "Instagram", "Facebook", "Личный контакт","Холодная база","Reffection", "Марквиз", 
 ];
 
-const existingGroups = new Set(rawOutput.map(r => r.group));
+const existingGroupsNormalized = new Set(
+  rawOutput.map(r => r.group.trim().toLowerCase())
+);
+
 for (const g of analyticGroups) {
-  if (!existingGroups.has(g)) {
-    const emptyRow = [SpreadsheetApp.newRichTextValue().setText(g).setTextStyle(SpreadsheetApp.newTextStyle().setBold(true).build()).build()];
+  if (!existingGroupsNormalized.has(g.trim().toLowerCase())) {
+    const emptyRow = [
+      SpreadsheetApp.newRichTextValue()
+        .setText(g)
+        .setTextStyle(SpreadsheetApp.newTextStyle().setBold(true).build())
+        .build()
+    ];
     for (let i = 0; i < sortedMonths.length + 1; i++) {
       emptyRow.push(SpreadsheetApp.newRichTextValue().setText("").build());
     }
@@ -159,7 +203,8 @@ for (const g of analyticGroups) {
   }
 }
 
-rawOutput = rawOutput.filter(r => analyticGroups.includes(r.group) || r.total > 0);
+
+rawOutput = rawOutput.filter(r => analyticGroups.includes(r.group));
 rawOutput.sort((a, b) => {
   const aIndex = analyticGroups.indexOf(a.group);
   const bIndex = analyticGroups.indexOf(b.group);
@@ -170,8 +215,20 @@ rawOutput.sort((a, b) => {
 });
 
 rawOutput.forEach((entry, i) => {
-  reportSheet.getRange(i + 2, 1, 1, headerRow.length).setRichTextValues([entry.richRow]);
+  // ✅ Исправляем возможные несоответствия по длине строки
+  while (entry.richRow.length < headerRow.length) {
+    entry.richRow.push(SpreadsheetApp.newRichTextValue().setText("").build());
+  }
+  if (entry.richRow.length > headerRow.length) {
+    entry.richRow = entry.richRow.slice(0, headerRow.length);
+  }
+
+  // ✅ Логируем, чтобы убедиться, что вставка сработала
+  Logger.log(`⬇️ Вставляем строку: ${entry.group}, ячеек: ${entry.richRow.length}`);
+
+  reportSheet.getRange(i + 3, 1, 1, headerRow.length).setRichTextValues([entry.richRow]);
 });
+
 
 const totalRowIndex = rawOutput.length + 1;
 const totalRow = [];
@@ -204,7 +261,10 @@ if (grand.total > 0) {
   totalRow.push(SpreadsheetApp.newRichTextValue().setText("").build());
 }
 
-reportSheet.getRange(totalRowIndex, 2, 1, totalRow.slice(1).length).setRichTextValues([totalRow.slice(1)]);
+const totalRowData = totalRow.slice(1);
+reportSheet.getRange(totalRowIndex, 2, 1, totalRowData.length)
+  .setRichTextValues([totalRowData]);
+
 
 // Вставка и стилизация
 styleFinalTable(reportSheet, headerRow, totalRowIndex);
@@ -316,42 +376,67 @@ function styleFinalTable(reportSheet, headerRow, totalRowIndex) {
   reportSheet.insertRowBefore(1);
   reportSheet.getRange(1, 2, 1, headerRow.slice(1).length).setValues([headerRow.slice(1)]);
 
-  // 👇 Многострочный заголовок A1 с цветными словами
-  const now = new Date();
-const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "dd.MM.yy HH:mm:ss");
+ // 🧹 Очистка
+reportSheet.clear();
 
+// 🟦 Заголовок в A1:A2
+const now = new Date();
+const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "dd.MM.yy HH:mm:ss");
 const fullHeader = `Итого\n(успех, в работе, провал)\nДата обновления: ${formattedDate}`;
 const headerBuilder = SpreadsheetApp.newRichTextValue().setText(fullHeader);
 
-// Основной стиль заголовка
-const baseStyle = SpreadsheetApp.newTextStyle().setFontSize(10).setBold(true).setForegroundColor("white").build();
-headerBuilder.setTextStyle(0, fullHeader.length, baseStyle);
-
-// Цветные участки
+headerBuilder.setTextStyle(0, fullHeader.length,
+  SpreadsheetApp.newTextStyle().setFontSize(10).setBold(true).setForegroundColor("white").build());
 headerBuilder.setTextStyle(fullHeader.indexOf("успех"), fullHeader.indexOf("успех") + 6,
-  SpreadsheetApp.newTextStyle().setForegroundColor("#00B050").setBold(true).setFontSize(10).build());
-
+  SpreadsheetApp.newTextStyle().setFontSize(10).setBold(true).setForegroundColor("#00B050").build());
 headerBuilder.setTextStyle(fullHeader.indexOf("в работе"), fullHeader.indexOf("в работе") + 9,
-  SpreadsheetApp.newTextStyle().setForegroundColor("#FFC000").setBold(true).setFontSize(10).build());
-
+  SpreadsheetApp.newTextStyle().setFontSize(10).setBold(true).setForegroundColor("#FFC000").build());
 headerBuilder.setTextStyle(fullHeader.indexOf("провал"), fullHeader.indexOf("провал") + 6,
-  SpreadsheetApp.newTextStyle().setForegroundColor("#FF6F91").setBold(true).setFontSize(10).build());
-
-// Доп. строка с датой — сделаем белой и чуть менее жирной
+  SpreadsheetApp.newTextStyle().setFontSize(10).setBold(true).setForegroundColor("#FF6F91").build());
 headerBuilder.setTextStyle(fullHeader.indexOf("Дата обновления:"), fullHeader.length,
-  SpreadsheetApp.newTextStyle().setFontSize(9).setForegroundColor("#FFFFFF").build());
+  SpreadsheetApp.newTextStyle().setFontSize(9).setForegroundColor("white").build());
+
+reportSheet.getRange("A1:A2").merge().setRichTextValue(headerBuilder.build())
+  .setBackground("#305496")
+  .setHorizontalAlignment("center")
+  .setVerticalAlignment("middle")
+  .setWrap(true);
+
+// 🟨 Заголовки месяцев (строка 1)
+const boldHeaderRow = headerRow.slice(1).map(text =>
+  SpreadsheetApp.newRichTextValue()
+    .setText(text)
+    .setTextStyle(0, text.length, SpreadsheetApp.newTextStyle().setBold(true).build())
+    .build()
+);
+reportSheet.getRange(1, 2, 1, boldHeaderRow.length).setRichTextValues([boldHeaderRow]);
+
+Logger.log("Тип totalRow:", Array.isArray(totalRow));
+Logger.log("Вложенный массив? →", Array.isArray(totalRow[0]));
+Logger.log("Тип первой ячейки:", typeof totalRow[0]);
+
+// 🟩 Строка "Итого" (строка 3)
+if (Array.isArray(totalRow[0])) {
+  reportSheet.getRange(2, 2, 1, totalRow[0].length).setRichTextValues(totalRow);
+} else {
+  reportSheet.getRange(2, 2, 1, totalRow.length).setRichTextValues([totalRow]);
+}
 
 
-  reportSheet.getRange("A1:A2")
-    .merge()
-    .setRichTextValue(headerBuilder.build())
-    .setBackground("#305496")
-    .setHorizontalAlignment("center")
-    .setVerticalAlignment("middle")
-    .setWrap(true);
 
-  reportSheet.getRange(2, 2, 1, headerRow.slice(1).length).setRichTextValues(totalRow);
-  reportSheet.deleteRow(totalRowIndex + 1);
+// 📊 Основная таблица с 3-й строки
+rawOutput.forEach((entry, i) => {
+  while (entry.richRow.length < headerRow.length) {
+    entry.richRow.push(SpreadsheetApp.newRichTextValue().setText("").build());
+  }
+  if (entry.richRow.length > headerRow.length) {
+    entry.richRow = entry.richRow.slice(0, headerRow.length);
+  }
+
+  reportSheet.getRange(i + 3, 1, 1, headerRow.length)
+    .setRichTextValues([entry.richRow]);
+});
+
 
   const monthLabels = headerRow.slice(1);
   for (let i = 0; i < monthLabels.length; i++) {
